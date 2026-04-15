@@ -26,6 +26,10 @@ public:
     Q_PROPERTY(bool isNotificationPermissionGranted READ isNotificationPermissionGranted NOTIFY onNotificationStateChanged)
     Q_PROPERTY(bool isKillSwitchEnabled READ isKillSwitchEnabled WRITE toggleKillSwitch NOTIFY killSwitchEnabledChanged)
     Q_PROPERTY(bool strictKillSwitchEnabled READ isStrictKillSwitchEnabled WRITE toggleStrictKillSwitch NOTIFY strictKillSwitchEnabledChanged)
+    Q_PROPERTY(bool isRuBypassEnabled READ isRuBypassEnabled WRITE toggleRuBypass NOTIFY ruBypassChanged)
+    Q_PROPERTY(bool isRuBypassSupported READ isRuBypassSupported CONSTANT)
+    Q_PROPERTY(bool isRuBypassUpdating READ isRuBypassUpdating NOTIFY ruBypassUpdatingChanged)
+    Q_PROPERTY(QString ruBypassStatusText READ getRuBypassStatusText NOTIFY ruBypassChanged)
 
     Q_PROPERTY(bool isDevModeEnabled READ isDevModeEnabled NOTIFY devModeEnabled)
     Q_PROPERTY(QString gatewayEndpoint READ getGatewayEndpoint WRITE setGatewayEndpoint NOTIFY gatewayEndpointChanged)
@@ -87,6 +91,12 @@ public slots:
     bool isStrictKillSwitchEnabled();
     void toggleStrictKillSwitch(bool enable);
 
+    bool isRuBypassEnabled();
+    void toggleRuBypass(bool enable);
+    bool isRuBypassSupported();
+    bool isRuBypassUpdating();
+    QString getRuBypassStatusText();
+
     bool isNotificationPermissionGranted();
     void requestNotificationPermission();
 
@@ -118,6 +128,10 @@ signals:
     void loggingStateChanged();
     void killSwitchEnabledChanged();
     void strictKillSwitchEnabledChanged(bool enabled);
+    void ruBypassChanged();
+    void ruBypassUpdatingChanged();
+    void ruBypassMessage(const QString &message);
+    void ruBypassErrorOccurred(const QString &errorMessage);
 
     void restoreBackupFinished();
     void changeSettingsFinished(const QString &finishedMessage);
@@ -168,8 +182,12 @@ private:
     QDateTime m_loggingDisableDate;
 
     bool m_isDevModeEnabled = false;
+    bool m_ruBypassUpdateInProgress = false;
 
     void checkIfNeedDisableLogs();
+    bool ensureRuBypassRouteSetAvailable();
+    bool loadBundledRuBypassRouteSet();
+    void refreshRuBypassRouteSetIfNeeded(bool force = false);
 };
 
 #endif // SETTINGSCONTROLLER_H

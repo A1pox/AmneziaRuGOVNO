@@ -1,15 +1,26 @@
 #include "settingsController.h"
 
+#include <QFile>
+#include <QHostAddress>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QAbstractSocket>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QStandardPaths>
 #include <QOperatingSystemVersion>
+#include <algorithm>
 
 #include "logger.h"
+#include "core/networkUtilities.h"
 #include "systemController.h"
 #include "ui/qautostart.h"
 #include "amnezia_application.h"
 #include "version.h"
 #ifdef Q_OS_ANDROID
     #include "platforms/android/android_controller.h"
+    #include <QJniObject>
 #endif
 
 #if defined(Q_OS_IOS) || defined(MACOS_NE)
@@ -51,6 +62,13 @@ SettingsController::SettingsController(const QSharedPointer<ServersModel> &serve
 
     m_isDevModeEnabled = m_settings->isDevGatewayEnv();
     toggleDevGatewayEnv(m_isDevModeEnabled);
+
+    if (m_settings->isRuBypassEnabled() && !isRuBypassSupported()) {
+        toggleRuBypass(false);
+    } else if (m_settings->isRuBypassEnabled()) {
+        ensureRuBypassRouteSetAvailable();
+        refreshRuBypassRouteSetIfNeeded();
+    }
 }
 
 QString getPlatformName()
@@ -68,6 +86,191 @@ QString getPlatformName()
 #else
     return "Unknown";
 #endif
+}
+
+namespace
+{
+    constexpr auto ruBypassRouteSetResource = ":/route-sets/ru_ipv4.json";
+    constexpr auto ruBypassRouteSetUrl = "https://stat.ripe.net/data/country-resource-list/data.json?resource=ru&v4_format=prefix";
+    constexpr int ruBypassRouteSetMaxAgeDays = 7;
+
+#ifdef Q_OS_ANDROID
+    constexpr int androidTiramisuApiLevel = 33;
+#endif
+
+    struct Ipv4Cidr
+    {
+        quint32 network = 0;
+        int prefix = 32;
+    };
+
+    quint32 ipv4Mask(const int prefix)
+    {
+        if (prefix <= 0) {
+            return 0;
+        }
+        if (prefix >= 32) {
+            return 0xffffffffu;
+        }
+
+        return 0xffffffffu << (32 - prefix);
+    }
+
+    bool contains(const Ipv4Cidr &lhs, const Ipv4Cidr &rhs)
+    {
+        if (lhs.prefix > rhs.prefix) {
+            return false;
+        }
+
+        return (rhs.network & ipv4Mask(lhs.prefix)) == lhs.network;
+    }
+
+    bool canMerge(const Ipv4Cidr &lhs, const Ipv4Cidr &rhs)
+    {
+        if (lhs.prefix != rhs.prefix || lhs.prefix <= 0) {
+            return false;
+        }
+
+        const quint64 blockSize = quint64(1) << (32 - lhs.prefix);
+        const quint32 parentMask = ipv4Mask(lhs.prefix - 1);
+        return lhs.network < rhs.network
+               && quint64(lhs.network) + blockSize == rhs.network
+               && (lhs.network & parentMask) == lhs.network;
+    }
+
+    QString ipv4CidrToString(const Ipv4Cidr &cidr)
+    {
+        return QString("%1/%2").arg(QHostAddress(cidr.network).toString()).arg(cidr.prefix);
+    }
+
+    QStringList collapseIpv4Routes(const QStringList &routes)
+    {
+        QVector<Ipv4Cidr> parsedRoutes;
+        parsedRoutes.reserve(routes.size());
+
+        for (const QString &route : routes) {
+            const QStringList parts = route.split('/');
+            const QHostAddress address(parts.first());
+            if (address.protocol() != QAbstractSocket::IPv4Protocol) {
+                continue;
+            }
+
+            bool ok = false;
+            const int prefix = parts.size() > 1 ? parts.last().toInt(&ok) : 32;
+            if (!ok && parts.size() > 1) {
+                continue;
+            }
+
+            parsedRoutes.push_back({ address.toIPv4Address() & ipv4Mask(prefix), prefix });
+        }
+
+        std::sort(parsedRoutes.begin(), parsedRoutes.end(), [](const Ipv4Cidr &lhs, const Ipv4Cidr &rhs) {
+            if (lhs.network == rhs.network) {
+                return lhs.prefix < rhs.prefix;
+            }
+            return lhs.network < rhs.network;
+        });
+
+        QVector<Ipv4Cidr> collapsedRoutes;
+        collapsedRoutes.reserve(parsedRoutes.size());
+        for (const Ipv4Cidr &route : parsedRoutes) {
+            if (!collapsedRoutes.isEmpty()) {
+                if (collapsedRoutes.constLast().network == route.network
+                    && collapsedRoutes.constLast().prefix == route.prefix) {
+                    continue;
+                }
+                if (contains(collapsedRoutes.constLast(), route)) {
+                    continue;
+                }
+            }
+
+            while (!collapsedRoutes.isEmpty() && contains(route, collapsedRoutes.constLast())) {
+                collapsedRoutes.removeLast();
+            }
+
+            collapsedRoutes.push_back(route);
+
+            while (collapsedRoutes.size() >= 2) {
+                const Ipv4Cidr &rhs = collapsedRoutes.constLast();
+                const Ipv4Cidr &lhs = collapsedRoutes.at(collapsedRoutes.size() - 2);
+                if (!canMerge(lhs, rhs)) {
+                    break;
+                }
+
+                collapsedRoutes.removeLast();
+                collapsedRoutes.removeLast();
+                collapsedRoutes.push_back({ lhs.network & ipv4Mask(lhs.prefix - 1), lhs.prefix - 1 });
+            }
+        }
+
+        QStringList result;
+        result.reserve(collapsedRoutes.size());
+        for (const Ipv4Cidr &route : collapsedRoutes) {
+            result.append(ipv4CidrToString(route));
+        }
+
+        return result;
+    }
+
+    QStringList parseRuBypassRoutes(const QByteArray &payload, QString *queryTime = nullptr)
+    {
+        QJsonParseError parseError;
+        const QJsonDocument doc = QJsonDocument::fromJson(payload, &parseError);
+        if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
+            qWarning() << "Failed to parse RU bypass route set:" << parseError.errorString();
+            return {};
+        }
+
+        const QJsonObject root = doc.object();
+        QString parsedQueryTime;
+        QJsonArray routesArray;
+
+        if (root.contains("ipv4")) {
+            parsedQueryTime = root.value("query_time").toString();
+            routesArray = root.value("ipv4").toArray();
+        } else {
+            const QJsonObject dataObject = root.value("data").toObject();
+            parsedQueryTime = dataObject.value("query_time").toString();
+            routesArray = dataObject.value("resources").toObject().value("ipv4").toArray();
+        }
+
+        QStringList routes;
+        routes.reserve(routesArray.size());
+        for (const QJsonValue &value : routesArray) {
+            if (!value.isString()) {
+                continue;
+            }
+
+            const QString route = value.toString().trimmed();
+            if (!NetworkUtilities::checkIpSubnetFormat(route)) {
+                continue;
+            }
+
+            routes.append(route);
+        }
+
+        routes.removeDuplicates();
+        routes = collapseIpv4Routes(routes);
+        if (queryTime != nullptr) {
+            *queryTime = parsedQueryTime;
+        }
+
+        return routes;
+    }
+
+    QString formatRouteSetDate(const QString &queryTime)
+    {
+        if (queryTime.isEmpty()) {
+            return {};
+        }
+
+        const QDateTime queryDateTime = QDateTime::fromString(queryTime, Qt::ISODate);
+        if (!queryDateTime.isValid()) {
+            return queryTime;
+        }
+
+        return queryDateTime.toString("yyyy-MM-dd");
+    }
 }
 
 void SettingsController::toggleAmneziaDns(bool enable)
@@ -231,6 +434,14 @@ void SettingsController::restoreAppConfigFromData(const QByteArray &data)
         m_sitesModel->setRouteMode(siteSplitTunnelingRouteMode);
         m_sitesModel->toggleSplitTunneling(siteSplittunnelingEnabled);
 
+        if (m_settings->isRuBypassEnabled() && !isRuBypassSupported()) {
+            toggleRuBypass(false);
+        } else if (m_settings->isRuBypassEnabled()) {
+            ensureRuBypassRouteSetAvailable();
+            refreshRuBypassRouteSetIfNeeded();
+        }
+        emit ruBypassChanged();
+
 #if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
         m_settings->setAutoConnect(false);
         m_settings->setStartMinimized(false);
@@ -267,6 +478,7 @@ void SettingsController::clearSettings()
     m_appSplitTunnelingModel->toggleSplitTunneling(false);
 
     toggleAutoStart(false);
+    emit ruBypassChanged();
 
     emit changeSettingsFinished(tr("All settings have been reset to default values"));
 
@@ -376,6 +588,92 @@ void SettingsController::toggleStrictKillSwitch(bool enable)
 {
     m_settings->setStrictKillSwitchEnabled(enable);
     emit strictKillSwitchEnabledChanged(enable);
+}
+
+bool SettingsController::isRuBypassEnabled()
+{
+    return m_settings->isRuBypassEnabled();
+}
+
+void SettingsController::toggleRuBypass(bool enable)
+{
+    if (enable == m_settings->isRuBypassEnabled()) {
+        return;
+    }
+
+    if (enable) {
+        if (!isRuBypassSupported()) {
+#ifdef Q_OS_ANDROID
+            emit ruBypassErrorOccurred(tr("Bypass Russian resources requires Android 13 or newer"));
+#else
+            emit ruBypassErrorOccurred(tr("Bypass Russian resources is not supported on this platform"));
+#endif
+            emit ruBypassChanged();
+            return;
+        }
+
+        if (!ensureRuBypassRouteSetAvailable()) {
+            emit ruBypassErrorOccurred(tr("Failed to load the Russian route set"));
+            emit ruBypassChanged();
+            return;
+        }
+
+        m_settings->storeRuBypassSiteSplitState(m_settings->isSitesSplitTunnelingEnabled(), m_settings->routeMode());
+        m_settings->setRuBypassEnabled(true);
+        m_sitesModel->setRouteMode(Settings::RouteMode::VpnAllExceptSites);
+        m_sitesModel->toggleSplitTunneling(true);
+
+        emit ruBypassChanged();
+        emit ruBypassMessage(tr("Bypass Russian resources enabled"));
+        refreshRuBypassRouteSetIfNeeded();
+        return;
+    }
+
+    m_settings->setRuBypassEnabled(false);
+    if (m_settings->hasStoredRuBypassSiteSplitState()) {
+        m_sitesModel->setRouteMode(m_settings->storedRuBypassRouteMode());
+        m_sitesModel->toggleSplitTunneling(m_settings->storedRuBypassSitesSplitTunnelingEnabled());
+        m_settings->clearStoredRuBypassSiteSplitState();
+    }
+
+    emit ruBypassChanged();
+    emit ruBypassMessage(tr("Bypass Russian resources disabled"));
+}
+
+bool SettingsController::isRuBypassSupported()
+{
+#if defined(Q_OS_WINDOWS)
+    return true;
+#elif defined(Q_OS_ANDROID)
+    // Pre-Android 13 excluded routes are expanded into included routes, which
+    // makes the RU preset too large to apply safely.
+    return QJniObject::getStaticField<jint>("android/os/Build$VERSION", "SDK_INT") >= androidTiramisuApiLevel;
+#else
+    return false;
+#endif
+}
+
+bool SettingsController::isRuBypassUpdating()
+{
+    return m_ruBypassUpdateInProgress;
+}
+
+QString SettingsController::getRuBypassStatusText()
+{
+#ifdef Q_OS_ANDROID
+    if (!isRuBypassSupported()) {
+        return tr("Routes Russian IPv4 resources outside the VPN. Available on Android 13 or newer.");
+    }
+#endif
+
+    const QString routeSetDate = formatRouteSetDate(m_settings->ruBypassRouteSetQueryTime());
+    if (m_ruBypassUpdateInProgress) {
+        return tr("Routes Russian IPv4 resources outside the VPN. Updating route set...");
+    }
+    if (!routeSetDate.isEmpty()) {
+        return tr("Routes Russian IPv4 resources outside the VPN. Route set date: %1").arg(routeSetDate);
+    }
+    return tr("Routes Russian IPv4 resources outside the VPN.");
 }
 
 bool SettingsController::isNotificationPermissionGranted()
@@ -532,4 +830,87 @@ void SettingsController::disableHomeAdLabel()
 {
     m_settings->disableHomeAdLabel();
     emit isHomeAdLabelVisibleChanged(false);
+}
+
+bool SettingsController::ensureRuBypassRouteSetAvailable()
+{
+    if (!m_settings->ruBypassRoutes().isEmpty()) {
+        return true;
+    }
+
+    return loadBundledRuBypassRouteSet();
+}
+
+bool SettingsController::loadBundledRuBypassRouteSet()
+{
+    QFile routeSetFile(ruBypassRouteSetResource);
+    if (!routeSetFile.open(QIODevice::ReadOnly)) {
+        qWarning() << "Failed to open bundled RU bypass route set";
+        return false;
+    }
+
+    QString queryTime;
+    const QStringList routes = parseRuBypassRoutes(routeSetFile.readAll(), &queryTime);
+    if (routes.isEmpty()) {
+        qWarning() << "Bundled RU bypass route set is empty";
+        return false;
+    }
+
+    m_settings->setRuBypassRoutes(routes);
+    m_settings->setRuBypassRouteSetQueryTime(queryTime);
+    m_settings->setRuBypassRouteSetUpdatedAt(QDateTime());
+    return true;
+}
+
+void SettingsController::refreshRuBypassRouteSetIfNeeded(bool force)
+{
+    if (!isRuBypassSupported() || m_ruBypassUpdateInProgress) {
+        return;
+    }
+
+    const QDateTime updatedAt = m_settings->ruBypassRouteSetUpdatedAt();
+    if (!force && updatedAt.isValid()
+        && updatedAt.daysTo(QDateTime::currentDateTimeUtc()) < ruBypassRouteSetMaxAgeDays) {
+        return;
+    }
+
+    m_ruBypassUpdateInProgress = true;
+    emit ruBypassUpdatingChanged();
+    emit ruBypassChanged();
+
+    QNetworkRequest request(QUrl(QString::fromLatin1(ruBypassRouteSetUrl)));
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+
+    QNetworkReply *reply = amnApp->networkManager()->get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        reply->deleteLater();
+
+        m_ruBypassUpdateInProgress = false;
+        emit ruBypassUpdatingChanged();
+        emit ruBypassChanged();
+
+        if (reply->error() != QNetworkReply::NoError) {
+            qWarning() << "Failed to update RU bypass route set:" << reply->errorString();
+            if (m_settings->isRuBypassEnabled()) {
+                emit ruBypassMessage(tr("Using the bundled Russian route set"));
+            }
+            return;
+        }
+
+        QString queryTime;
+        const QStringList routes = parseRuBypassRoutes(reply->readAll(), &queryTime);
+        if (routes.isEmpty()) {
+            emit ruBypassErrorOccurred(tr("Failed to parse the updated Russian route set"));
+            return;
+        }
+
+        m_settings->setRuBypassRoutes(routes);
+        if (!queryTime.isEmpty()) {
+            m_settings->setRuBypassRouteSetQueryTime(queryTime);
+        }
+        m_settings->setRuBypassRouteSetUpdatedAt(QDateTime::currentDateTimeUtc());
+
+        emit ruBypassChanged();
+        emit ruBypassMessage(tr("Russian route set updated"));
+    });
 }

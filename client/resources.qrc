@@ -66,6 +66,7 @@
         <file>images/tray/active.png</file>
         <file>images/tray/default.png</file>
         <file>images/tray/error.png</file>
+        <file>route-sets/ru_ipv4.json</file>
         <file>server_scripts/awg/configure_container.sh</file>
         <file>server_scripts/awg/Dockerfile</file>
         <file>server_scripts/awg/run_container.sh</file>

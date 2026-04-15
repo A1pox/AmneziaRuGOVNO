@@ -49,6 +49,18 @@ PageType {
         }
     }
 
+    Connections {
+        target: SettingsController
+
+        function onRuBypassMessage(message) {
+            PageController.showNotificationMessage(message)
+        }
+
+        function onRuBypassErrorOccurred(errorMessage) {
+            PageController.showErrorMessage(errorMessage)
+        }
+    }
+
     QtObject {
         id: routeMode
         property int allSites: 0
@@ -105,12 +117,23 @@ PageType {
             showSwitcher: true
             switcher {
                 checked: SitesModel.isTunnelingEnabled
-                enabled: root.pageEnabled
+                enabled: root.pageEnabled && !SettingsController.isRuBypassEnabled
             }
             switcherFunction: function(checked) {
                 SitesModel.toggleSplitTunneling(checked)
                 selector.text = root.routeModesModel[getRouteModesModelIndex()].name
             }
+        }
+
+        WarningType {
+            Layout.fillWidth: true
+            Layout.topMargin: 8
+            Layout.leftMargin: 16
+            Layout.rightMargin: 16
+
+            visible: SettingsController.isRuBypassEnabled && root.pageEnabled
+            iconPath: "qrc:/images/controls/alert-circle.svg"
+            textString: qsTr("Bypass Russian resources is enabled. Russian IPv4 ranges from the built-in route set will bypass the VPN, and the list below can be used for additional addresses.")
         }
 
         DropDownType {
@@ -124,7 +147,7 @@ PageType {
             drawerHeight: 0.4375
             drawerParent: root
 
-            enabled: root.pageEnabled
+            enabled: root.pageEnabled && !SettingsController.isRuBypassEnabled
 
             headerText: qsTr("Mode")
 

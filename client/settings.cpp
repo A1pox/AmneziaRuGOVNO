@@ -274,6 +274,16 @@ void Settings::setSitesSplitTunnelingEnabled(bool enabled)
     m_settings.setValue("Conf/sitesSplitTunnelingEnabled", enabled);
 }
 
+bool Settings::isRuBypassEnabled() const
+{
+    return m_settings.value("Conf/ruBypassEnabled", false).toBool();
+}
+
+void Settings::setRuBypassEnabled(bool enabled)
+{
+    m_settings.setValue("Conf/ruBypassEnabled", enabled);
+}
+
 bool Settings::addVpnSite(RouteMode mode, const QString &site, const QString &ip)
 {
     QVariantMap sites = vpnSites(mode);
@@ -355,6 +365,66 @@ void Settings::removeVpnSites(RouteMode mode, const QStringList &sites)
 void Settings::removeAllVpnSites(RouteMode mode)
 {
     setVpnSites(mode, QVariantMap());
+}
+
+QStringList Settings::ruBypassRoutes() const
+{
+    return m_settings.value("Conf/ruBypassRoutes").toStringList();
+}
+
+void Settings::setRuBypassRoutes(const QStringList &routes)
+{
+    m_settings.setValue("Conf/ruBypassRoutes", routes);
+}
+
+QString Settings::ruBypassRouteSetQueryTime() const
+{
+    return m_settings.value("Conf/ruBypassRouteSetQueryTime").toString();
+}
+
+void Settings::setRuBypassRouteSetQueryTime(const QString &queryTime)
+{
+    m_settings.setValue("Conf/ruBypassRouteSetQueryTime", queryTime);
+}
+
+QDateTime Settings::ruBypassRouteSetUpdatedAt() const
+{
+    return m_settings.value("Conf/ruBypassRouteSetUpdatedAt").toDateTime();
+}
+
+void Settings::setRuBypassRouteSetUpdatedAt(const QDateTime &dateTime)
+{
+    m_settings.setValue("Conf/ruBypassRouteSetUpdatedAt", dateTime);
+}
+
+bool Settings::hasStoredRuBypassSiteSplitState() const
+{
+    return m_settings.value("Conf/ruBypassStoredStateValid", false).toBool();
+}
+
+void Settings::storeRuBypassSiteSplitState(bool enabled, RouteMode mode)
+{
+    m_settings.setValue("Conf/ruBypassStoredStateValid", true);
+    m_settings.setValue("Conf/ruBypassStoredSitesSplitTunnelingEnabled", enabled);
+    m_settings.setValue("Conf/ruBypassStoredRouteMode", mode);
+}
+
+bool Settings::storedRuBypassSitesSplitTunnelingEnabled() const
+{
+    return m_settings.value("Conf/ruBypassStoredSitesSplitTunnelingEnabled", false).toBool();
+}
+
+Settings::RouteMode Settings::storedRuBypassRouteMode() const
+{
+    return static_cast<RouteMode>(m_settings.value("Conf/ruBypassStoredRouteMode",
+                                                   static_cast<int>(Settings::RouteMode::VpnOnlyForwardSites)).toInt());
+}
+
+void Settings::clearStoredRuBypassSiteSplitState()
+{
+    m_settings.remove("Conf/ruBypassStoredStateValid");
+    m_settings.remove("Conf/ruBypassStoredSitesSplitTunnelingEnabled");
+    m_settings.remove("Conf/ruBypassStoredRouteMode");
 }
 
 QString Settings::primaryDns() const

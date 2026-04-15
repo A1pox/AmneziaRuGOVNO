@@ -13,6 +13,19 @@ PageType {
     id: root
 
     property bool isAppSplitTinnelingEnabled: Qt.platform.os === "windows" || Qt.platform.os === "android"
+    property bool isRuBypassVisible: Qt.platform.os === "windows" || Qt.platform.os === "android"
+
+    Connections {
+        target: SettingsController
+
+        function onRuBypassMessage(message) {
+            PageController.showNotificationMessage(message)
+        }
+
+        function onRuBypassErrorOccurred(errorMessage) {
+            PageController.showErrorMessage(errorMessage)
+        }
+    }
 
     BackButtonType {
         id: backButton
@@ -91,13 +104,48 @@ PageType {
 
             DividerType {}
 
+            SwitcherType {
+                id: ruBypassSwitch
+
+                visible: root.isRuBypassVisible
+
+                Layout.fillWidth: true
+                Layout.leftMargin: 16
+                Layout.rightMargin: 16
+                Layout.topMargin: 16
+
+                text: qsTr("Bypass Russian resources")
+                descriptionText: ConnectionController.isConnected
+                                 ? qsTr("Disconnect to change this setting")
+                                 : ServersModel.isDefaultServerDefaultContainerHasSplitTunneling
+                                   ? qsTr("Current server configuration does not support split tunneling")
+                                   : SettingsController.ruBypassStatusText
+
+                enabled: !ConnectionController.isConnected
+                         && !ServersModel.isDefaultServerDefaultContainerHasSplitTunneling
+                         && SettingsController.isRuBypassSupported
+
+                checked: SettingsController.isRuBypassEnabled
+                onToggled: function() {
+                    if (checked !== SettingsController.isRuBypassEnabled) {
+                        SettingsController.toggleRuBypass(checked)
+                    }
+                }
+            }
+
+            DividerType {
+                visible: root.isRuBypassVisible
+            }
+
             LabelWithButtonType {
                 id: splitTunnelingButton
 
                 Layout.fillWidth: true
 
                 text: qsTr("Site-based split tunneling")
-                descriptionText: qsTr("Allows you to select which sites you want to access through the VPN")
+                descriptionText: SettingsController.isRuBypassEnabled
+                                 ? qsTr("Lets you add extra addresses that should also bypass the VPN")
+                                 : qsTr("Allows you to select which sites you want to access through the VPN")
                 rightImageSource: "qrc:/images/controls/chevron-right.svg"
 
                 clickedFunction: function() {

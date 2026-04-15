@@ -87,22 +87,28 @@ void VpnConnection::onConnectionStateChanged(Vpn::ConnectionState state)
                     container != DockerContainer::WireGuard) {
                     QString dns1 = m_vpnConfiguration.value(config_key::dns1).toString();
                     QString dns2 = m_vpnConfiguration.value(config_key::dns2).toString();
+                    const auto splitTunnelType =
+                            static_cast<Settings::RouteMode>(m_vpnConfiguration.value(config_key::splitTunnelType).toInt());
+                    const bool hasConfiguredSplitRoutes = !m_vpnConfiguration.value(config_key::splitTunnelSites).toArray().isEmpty();
 
                     // TODO: add error code handling for all routeAddList (or rework the code below)
                     iface->routeAddList(m_vpnProtocol->vpnGateway(), QStringList() << dns1 << dns2);
 
-                    if (m_settings->isSitesSplitTunnelingEnabled()) {
+                    if (hasConfiguredSplitRoutes && splitTunnelType != Settings::VpnAllSites) {
                         iface->routeDeleteList(m_vpnProtocol->vpnGateway(), QStringList() << "0.0.0.0");
                         // qDebug() << "VpnConnection::onConnectionStateChanged :: adding custom routes, count:" << forwardIps.size();
-                        if (m_settings->routeMode() == Settings::VpnOnlyForwardSites) {
+                        if (splitTunnelType == Settings::VpnOnlyForwardSites) {
                             QTimer::singleShot(1000, m_vpnProtocol.data(),
                                                [this]() { addSitesRoutes(m_vpnProtocol->vpnGateway(), m_settings->routeMode()); });
-                        } else if (m_settings->routeMode() == Settings::VpnAllExceptSites) {
+                        } else if (splitTunnelType == Settings::VpnAllExceptSites) {
                             iface->routeAddList(m_vpnProtocol->vpnGateway(), QStringList() << "0.0.0.0/1");
                             iface->routeAddList(m_vpnProtocol->vpnGateway(), QStringList() << "128.0.0.0/1");
 
                             iface->routeAddList(m_vpnProtocol->routeGateway(), QStringList() << remoteAddress());
-                            addSitesRoutes(m_vpnProtocol->routeGateway(), m_settings->routeMode());
+                            if (m_settings->isRuBypassEnabled()) {
+                                iface->routeAddList(m_vpnProtocol->routeGateway(), m_settings->ruBypassRoutes());
+                            }
+                            addSitesRoutes(m_vpnProtocol->routeGateway(), Settings::VpnAllExceptSites);
                         }
                     }
                 }
@@ -342,24 +348,31 @@ void VpnConnection::appendSplitTunnelingConfig()
         }
     }
 
+    const bool isRuBypassEnabled = m_settings->isRuBypassEnabled();
+    const QStringList ruBypassRoutes = m_settings->ruBypassRoutes();
+
     Settings::RouteMode routeMode = Settings::RouteMode::VpnAllSites;
     QJsonArray sitesJsonArray;
-    if (m_settings->isSitesSplitTunnelingEnabled()) {
-        routeMode = m_settings->routeMode();
+    if ((m_settings->isSitesSplitTunnelingEnabled() || (isRuBypassEnabled && !ruBypassRoutes.isEmpty()))
+        && allowSiteBasedSplitTunneling) {
+        routeMode = isRuBypassEnabled ? Settings::RouteMode::VpnAllExceptSites : m_settings->routeMode();
 
-        if (allowSiteBasedSplitTunneling) {
-            auto sites = m_settings->getVpnIps(routeMode);
-            for (const auto &site : sites) {
-                sitesJsonArray.append(site);
-            }
+        auto sites = m_settings->getVpnIps(routeMode);
+        if (isRuBypassEnabled) {
+            sites.append(ruBypassRoutes);
+            sites.removeDuplicates();
+        }
 
-            if (sitesJsonArray.isEmpty()) {
-                routeMode = Settings::RouteMode::VpnAllSites;
-            } else if (routeMode == Settings::VpnOnlyForwardSites) {
-                // Allow traffic to Amnezia DNS
-                sitesJsonArray.append(m_vpnConfiguration.value(config_key::dns1).toString());
-                sitesJsonArray.append(m_vpnConfiguration.value(config_key::dns2).toString());
-            }
+        for (const auto &site : sites) {
+            sitesJsonArray.append(site);
+        }
+
+        if (sitesJsonArray.isEmpty()) {
+            routeMode = Settings::RouteMode::VpnAllSites;
+        } else if (routeMode == Settings::VpnOnlyForwardSites) {
+            // Allow traffic to Amnezia DNS
+            sitesJsonArray.append(m_vpnConfiguration.value(config_key::dns1).toString());
+            sitesJsonArray.append(m_vpnConfiguration.value(config_key::dns2).toString());
         }
     }
 
@@ -384,9 +397,12 @@ void VpnConnection::appendSplitTunnelingConfig()
     m_vpnConfiguration.insert(config_key::appSplitTunnelType, appsRouteMode);
     m_vpnConfiguration.insert(config_key::splitTunnelApps, appsJsonArray);
 
-    qDebug() << QString("Site split tunneling is %1, route mode is %2")
-                        .arg(m_settings->isSitesSplitTunnelingEnabled() ? "enabled" : "disabled")
-                        .arg(routeMode);
+    qDebug() << QString("Site split tunneling is %1, route mode is %2, RU bypass is %3")
+                        .arg((m_settings->isSitesSplitTunnelingEnabled()
+                              || (isRuBypassEnabled && !ruBypassRoutes.isEmpty())) ? "enabled" : "disabled")
+                        .arg(routeMode)
+                        .arg(isRuBypassEnabled ? "enabled" : "disabled");
+    qDebug() << "RU bypass routes:" << ruBypassRoutes.size();
     qDebug() << QString("App split tunneling is %1, route mode is %2")
                         .arg(m_settings->isAppsSplitTunnelingEnabled() ? "enabled" : "disabled")
                         .arg(appsRouteMode);

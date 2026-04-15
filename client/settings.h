@@ -144,6 +144,24 @@ public:
     void removeVpnSites(RouteMode mode, const QStringList &sites);
     void removeAllVpnSites(RouteMode mode);
 
+    bool isRuBypassEnabled() const;
+    void setRuBypassEnabled(bool enabled);
+
+    QStringList ruBypassRoutes() const;
+    void setRuBypassRoutes(const QStringList &routes);
+
+    QString ruBypassRouteSetQueryTime() const;
+    void setRuBypassRouteSetQueryTime(const QString &queryTime);
+
+    QDateTime ruBypassRouteSetUpdatedAt() const;
+    void setRuBypassRouteSetUpdatedAt(const QDateTime &dateTime);
+
+    bool hasStoredRuBypassSiteSplitState() const;
+    void storeRuBypassSiteSplitState(bool enabled, RouteMode mode);
+    bool storedRuBypassSitesSplitTunnelingEnabled() const;
+    RouteMode storedRuBypassRouteMode() const;
+    void clearStoredRuBypassSiteSplitState();
+
     bool useAmneziaDns() const
     {
         return m_settings.value("Conf/useAmneziaDns", true).toBool();
