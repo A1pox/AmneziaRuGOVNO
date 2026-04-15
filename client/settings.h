@@ -162,6 +162,30 @@ public:
     RouteMode storedRuBypassRouteMode() const;
     void clearStoredRuBypassSiteSplitState();
 
+    bool isTelegramProxyEnabled() const;
+    void setTelegramProxyEnabled(bool enabled);
+
+    QString telegramProxyListenHost() const;
+    void setTelegramProxyListenHost(const QString &host);
+
+    int telegramProxyPort() const;
+    void setTelegramProxyPort(int port);
+
+    QString telegramProxySecret() const;
+    void setTelegramProxySecret(const QString &secret);
+
+    QString telegramProxyFakeTlsDomain() const;
+    void setTelegramProxyFakeTlsDomain(const QString &domain);
+
+    QString telegramProxyCfProxyDomain() const;
+    void setTelegramProxyCfProxyDomain(const QString &domain);
+
+    bool isTelegramProxyCfProxyEnabled() const;
+    void setTelegramProxyCfProxyEnabled(bool enabled);
+
+    bool isTelegramProxyCfProxyPriorityEnabled() const;
+    void setTelegramProxyCfProxyPriorityEnabled(bool enabled);
+
     bool useAmneziaDns() const
     {
         return m_settings.value("Conf/useAmneziaDns", true).toBool();

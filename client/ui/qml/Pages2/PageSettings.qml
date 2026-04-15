@@ -104,6 +104,7 @@ PageType {
     property list<QtObject> settingsEntries: [
         servers,
         connection,
+        telegramProxy,
         application,
         news,
         backup,
@@ -141,6 +142,17 @@ PageType {
         property bool isVisible: true
         readonly property var clickedHandler: function() {
             PageController.goToPage(PageEnum.PageSettingsApplication)
+        }
+    }
+
+    QtObject {
+        id: telegramProxy
+
+        property string title: qsTr("Telegram WS proxy")
+        readonly property string leftImagePath: "qrc:/images/controls/telegram.svg"
+        property bool isVisible: Qt.platform.os === "windows" || Qt.platform.os === "android"
+        readonly property var clickedHandler: function() {
+            PageController.goToPage(PageEnum.PageSettingsTelegramProxy)
         }
     }
 

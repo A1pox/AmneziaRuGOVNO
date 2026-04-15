@@ -1,6 +1,9 @@
 #include "settings.h"
 
+#include <algorithm>
+
 #include "QCoreApplication"
+#include "QRandomGenerator"
 #include "QThread"
 
 #include "core/networkUtilities.h"
@@ -15,6 +18,15 @@ namespace
     const char cloudFlareNs2[] = "1.0.0.1";
 
     constexpr char gatewayEndpoint[] = "http://gw.amnezia.org:80/";
+
+    QString generateTelegramProxySecret()
+    {
+        QByteArray bytes(16, Qt::Uninitialized);
+        for (int i = 0; i < bytes.size(); ++i) {
+            bytes[i] = static_cast<char>(QRandomGenerator::system()->bounded(256));
+        }
+        return QString::fromLatin1(bytes.toHex());
+    }
 }
 
 Settings::Settings(QObject *parent) : QObject(parent), m_settings(ORGANIZATION_NAME, APPLICATION_NAME, this)
@@ -425,6 +437,96 @@ void Settings::clearStoredRuBypassSiteSplitState()
     m_settings.remove("Conf/ruBypassStoredStateValid");
     m_settings.remove("Conf/ruBypassStoredSitesSplitTunnelingEnabled");
     m_settings.remove("Conf/ruBypassStoredRouteMode");
+}
+
+bool Settings::isTelegramProxyEnabled() const
+{
+    return m_settings.value("Conf/telegramProxyEnabled", false).toBool();
+}
+
+void Settings::setTelegramProxyEnabled(bool enabled)
+{
+    m_settings.setValue("Conf/telegramProxyEnabled", enabled);
+}
+
+QString Settings::telegramProxyListenHost() const
+{
+    return m_settings.value("Conf/telegramProxyListenHost", "127.0.0.1").toString();
+}
+
+void Settings::setTelegramProxyListenHost(const QString &host)
+{
+    m_settings.setValue("Conf/telegramProxyListenHost", host.trimmed());
+}
+
+int Settings::telegramProxyPort() const
+{
+    return m_settings.value("Conf/telegramProxyPort", 1443).toInt();
+}
+
+void Settings::setTelegramProxyPort(int port)
+{
+    m_settings.setValue("Conf/telegramProxyPort", port);
+}
+
+QString Settings::telegramProxySecret() const
+{
+    QString secret = m_settings.value("Conf/telegramProxySecret").toString().trimmed().toLower();
+    const bool isValid = secret.size() == 32
+                         && std::all_of(secret.cbegin(), secret.cend(), [](QChar c) {
+                                return c.isDigit()
+                                       || (c >= QLatin1Char('a') && c <= QLatin1Char('f'));
+                            });
+    if (!isValid) {
+        secret = generateTelegramProxySecret();
+        m_settings.setValue("Conf/telegramProxySecret", secret);
+    }
+    return secret;
+}
+
+void Settings::setTelegramProxySecret(const QString &secret)
+{
+    m_settings.setValue("Conf/telegramProxySecret", secret.trimmed().toLower());
+}
+
+QString Settings::telegramProxyFakeTlsDomain() const
+{
+    return m_settings.value("Conf/telegramProxyFakeTlsDomain").toString().trimmed();
+}
+
+void Settings::setTelegramProxyFakeTlsDomain(const QString &domain)
+{
+    m_settings.setValue("Conf/telegramProxyFakeTlsDomain", domain.trimmed().toLower());
+}
+
+QString Settings::telegramProxyCfProxyDomain() const
+{
+    return m_settings.value("Conf/telegramProxyCfProxyDomain").toString().trimmed();
+}
+
+void Settings::setTelegramProxyCfProxyDomain(const QString &domain)
+{
+    m_settings.setValue("Conf/telegramProxyCfProxyDomain", domain.trimmed().toLower());
+}
+
+bool Settings::isTelegramProxyCfProxyEnabled() const
+{
+    return m_settings.value("Conf/telegramProxyCfProxyEnabled", true).toBool();
+}
+
+void Settings::setTelegramProxyCfProxyEnabled(bool enabled)
+{
+    m_settings.setValue("Conf/telegramProxyCfProxyEnabled", enabled);
+}
+
+bool Settings::isTelegramProxyCfProxyPriorityEnabled() const
+{
+    return m_settings.value("Conf/telegramProxyCfProxyPriorityEnabled", true).toBool();
+}
+
+void Settings::setTelegramProxyCfProxyPriorityEnabled(bool enabled)
+{
+    m_settings.setValue("Conf/telegramProxyCfProxyPriorityEnabled", enabled);
 }
 
 QString Settings::primaryDns() const

@@ -984,6 +984,21 @@ class AmneziaActivity : QtActivity() {
     }
 
     @Suppress("unused")
+    fun startTelegramProxyForegroundService(port: Int) {
+        ContextCompat.startForegroundService(
+            this,
+            Intent(this, TelegramProxyForegroundService::class.java).apply {
+                putExtra("port", port)
+            }
+        )
+    }
+
+    @Suppress("unused")
+    fun stopTelegramProxyForegroundService() {
+        stopService(Intent(this, TelegramProxyForegroundService::class.java))
+    }
+
+    @Suppress("unused")
     fun getAppList(): String {
         Log.v(TAG, "Get app list")
         var appList = ""

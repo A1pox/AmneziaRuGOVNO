@@ -24,6 +24,7 @@ namespace PageLoader
         PageSettingsServerServices,
         PageSettingsServerProtocol,
         PageSettingsConnection,
+        PageSettingsTelegramProxy,
         PageSettingsDns,
         PageSettingsApplication,
         PageSettingsNewsNotifications,

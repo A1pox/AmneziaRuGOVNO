@@ -11,6 +11,9 @@ set(HEADERS ${HEADERS}
     ${CLIENT_ROOT_DIR}/core/server_defs.h
     ${CLIENT_ROOT_DIR}/core/api/apiDefs.h
     ${CLIENT_ROOT_DIR}/core/qrCodeUtils.h
+    ${CLIENT_ROOT_DIR}/core/telegramProxyManager.h
+    ${CLIENT_ROOT_DIR}/core/telegramProxyTypes.h
+    ${CLIENT_ROOT_DIR}/core/telegramWsProxyEngine.h
     ${CLIENT_ROOT_DIR}/core/controllers/coreController.h
     ${CLIENT_ROOT_DIR}/core/controllers/gatewayController.h
     ${CLIENT_ROOT_DIR}/core/controllers/serverController.h
@@ -59,6 +62,8 @@ set(SOURCES ${SOURCES}
     ${CLIENT_ROOT_DIR}/core/scripts_registry.cpp
     ${CLIENT_ROOT_DIR}/core/server_defs.cpp
     ${CLIENT_ROOT_DIR}/core/qrCodeUtils.cpp
+    ${CLIENT_ROOT_DIR}/core/telegramProxyManager.cpp
+    ${CLIENT_ROOT_DIR}/core/telegramWsProxyEngine.cpp
     ${CLIENT_ROOT_DIR}/core/controllers/coreController.cpp
     ${CLIENT_ROOT_DIR}/core/controllers/gatewayController.cpp
     ${CLIENT_ROOT_DIR}/core/controllers/serverController.cpp

@@ -23,6 +23,7 @@
 #include "ui/controllers/settingsController.h"
 #include "ui/controllers/sitesController.h"
 #include "ui/controllers/systemController.h"
+#include "ui/controllers/telegramProxyController.h"
 
 #include "ui/models/allowed_dns_model.h"
 #include "ui/models/containers_model.h"
@@ -116,6 +117,7 @@ private:
     QScopedPointer<SettingsController> m_settingsController;
     QScopedPointer<SitesController> m_sitesController;
     QScopedPointer<SystemController> m_systemController;
+    QScopedPointer<TelegramProxyController> m_telegramProxyController;
     QScopedPointer<AppSplitTunnelingController> m_appSplitTunnelingController;
     QScopedPointer<AllowedDnsController> m_allowedDnsController;
 

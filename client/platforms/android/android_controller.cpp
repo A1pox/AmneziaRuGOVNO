@@ -328,6 +328,16 @@ void AndroidController::sendTouch(float x, float y)
     callActivityMethod("sendTouch", "(FF)V", x, y);
 }
 
+void AndroidController::startTelegramProxyForegroundService(int port)
+{
+    callActivityMethod("startTelegramProxyForegroundService", "(I)V", port);
+}
+
+void AndroidController::stopTelegramProxyForegroundService()
+{
+    callActivityMethod("stopTelegramProxyForegroundService", "()V");
+}
+
 // Moving log processing to the Android side
 jclass AndroidController::log;
 jmethodID AndroidController::logDebug;

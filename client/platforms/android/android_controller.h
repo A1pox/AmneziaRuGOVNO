@@ -55,6 +55,8 @@ public:
     void requestNotificationPermission();
     bool requestAuthentication();
     void sendTouch(float x, float y);
+    void startTelegramProxyForegroundService(int port);
+    void stopTelegramProxyForegroundService();
 
     static bool initLogging();
     static void messageHandler(QtMsgType type, const QMessageLogContext &context, const QString &message);

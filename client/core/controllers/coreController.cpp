@@ -153,6 +153,9 @@ void CoreController::initControllers()
     m_systemController.reset(new SystemController(m_settings));
     m_engine->rootContext()->setContextProperty("SystemController", m_systemController.get());
 
+    m_telegramProxyController.reset(new TelegramProxyController(m_settings));
+    m_engine->rootContext()->setContextProperty("TelegramProxyController", m_telegramProxyController.get());
+
     m_apiSettingsController.reset(
             new ApiSettingsController(m_serversModel, m_apiAccountInfoModel, m_apiCountryModel, m_apiDevicesModel, m_settings));
     m_engine->rootContext()->setContextProperty("ApiSettingsController", m_apiSettingsController.get());
