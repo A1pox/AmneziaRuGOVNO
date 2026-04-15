@@ -28,6 +28,8 @@ class WindowsRouteMonitor final : public QObject {
 
   bool addExclusionRoute(const IPAddress& prefix);
   bool deleteExclusionRoute(const IPAddress& prefix);
+  QList<IPAddress> addExclusionRoutes(const QList<IPAddress>& prefixes);
+  QList<IPAddress> deleteExclusionRoutes(const QList<IPAddress>& prefixes);
   void flushExclusionRoutes() { return flushRouteTable(m_exclusionRoutes); };
 
   quint64 getLuid() const { return m_luid; }
@@ -41,8 +43,9 @@ class WindowsRouteMonitor final : public QObject {
                                 const IP_ADDRESS_PREFIX* dest);
   static QHostAddress prefixToAddress(const IP_ADDRESS_PREFIX* dest);
 
+  MIB_IPFORWARD_ROW2* buildExclusionRoute(const IPAddress& prefix) const;
   void flushRouteTable(QHash<IPAddress, MIB_IPFORWARD_ROW2*>& table);
-  void updateExclusionRoute(MIB_IPFORWARD_ROW2* data, void* table);
+  bool updateExclusionRoute(MIB_IPFORWARD_ROW2* data, void* table);
   void updateInterfaceMetrics(int family);
   void updateCapturedRoutes(int family);
   void updateCapturedRoutes(int family, void* table);
