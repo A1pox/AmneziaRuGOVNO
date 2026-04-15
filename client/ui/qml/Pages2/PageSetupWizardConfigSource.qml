@@ -267,6 +267,7 @@ PageType {
     property list<QtObject> variants: [
         amneziaVpn,
         selfHostVpn,
+        proxyOnly,
         backupRestore,
         fileOpen,
         qrScan,
@@ -302,6 +303,19 @@ PageType {
         property bool isVisible: true
         property var handler: function() {
             PageController.goToPage(PageEnum.PageSetupWizardCredentials)
+        }
+    }
+
+    QtObject {
+        id: proxyOnly
+
+        property bool featuredAmneziaConnection: false
+        property string title: qsTr("Proxy only")
+        property string description: qsTr("Use Telegram WS proxy without setting up a VPN")
+        property string imageSource: "qrc:/images/controls/telegram.svg"
+        property bool isVisible: TelegramProxyController.isSupported
+        property var handler: function() {
+            PageController.goToPage(PageEnum.PageSettingsTelegramProxy)
         }
     }
 
