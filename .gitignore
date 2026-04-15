@@ -85,6 +85,9 @@ client/.DS_Store
 # tmp files
 *.*~
 
+# Local fork/release staging
+/local-releases/
+
 #########################  Android
 # Built application files
 *.apk
