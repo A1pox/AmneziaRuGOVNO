@@ -10,6 +10,7 @@
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QMetaEnum>
+#include <QSet>
 #include <QTimer>
 
 #include "leakdetector.h"
@@ -248,7 +249,30 @@ bool Daemon::addExclusionRoutes(const QStringList& addresses) {
     m_excludedAddrSet[prefix] = pendingPrefixes.value(prefix, 1);
   }
 
-  return addedPrefixes.size() == requestedPrefixes.size();
+  if (addedPrefixes.size() != requestedPrefixes.size()) {
+    QSet<IPAddress> addedSet;
+    for (const IPAddress& prefix : addedPrefixes) {
+      addedSet.insert(prefix);
+    }
+
+    QStringList skippedPrefixes;
+    for (const IPAddress& prefix : requestedPrefixes) {
+      if (!addedSet.contains(prefix)) {
+        skippedPrefixes.append(prefix.toString());
+        if (skippedPrefixes.size() >= 10) {
+          break;
+        }
+      }
+    }
+
+    logger.warning() << "Configured exclusion routes partially:"
+                     << addedPrefixes.size() << "/" << requestedPrefixes.size()
+                     << "sample skipped prefixes:" << skippedPrefixes;
+  }
+
+  // Exclusion routes are best-effort: do not tear down the whole VPN session
+  // just because Windows rejected a subset of split-tunnel prefixes.
+  return true;
 }
 
 bool Daemon::delExclusionRoute(const IPAddress& prefix) {
