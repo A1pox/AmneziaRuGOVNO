@@ -22,12 +22,14 @@ permissions:
 
 env:
   QT_VERSION: 6.10.1
+  QIF_VERSION: 4.7
+  BUILD_ARCH: 64
   QT_MODULES: qtremoteobjects qt5compat qtimageformats qtshadertools
   ANDROID_BUILD_PLATFORM: android-36
 
 jobs:
   build-windows:
-    name: Build Windows Unpacked
+    name: Build Windows Installer
     runs-on: windows-latest
 
     steps:
@@ -38,7 +40,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install Qt
-        uses: jurplel/install-qt-action@v4
+        uses: jurplel/install-qt-action@v3
         with:
           version: ${{ env.QT_VERSION }}
           host: windows
@@ -47,55 +49,68 @@ jobs:
           modules: ${{ env.QT_MODULES }}
           dir: ${{ runner.temp }}
           setup-python: true
+          tools: tools_ifw
           aqtversion: ==3.3.0
           py7zrversion: ==0.22.*
 
-      - name: Configure
-        shell: powershell
-        run: >
-          cmake
-          -S .
-          -B build
-          -G "Visual Studio 17 2022"
-          -A x64
-          -DCMAKE_PREFIX_PATH="${env:RUNNER_TEMP}\Qt\${env:QT_VERSION}\msvc2022_64"
+      - name: Setup msvc
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
 
-      - name: Build client and service
-        shell: powershell
-        run: >
-          cmake
-          --build build
-          --config Release
-          --target AmneziaVPN AmneziaVPN-service
-          --
-          /m
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
 
-      - name: Assemble unpacked bundle
+      - name: Install WiX Toolset
         shell: powershell
         run: |
-          $qtRoot = Join-Path $env:RUNNER_TEMP "Qt\${env:QT_VERSION}\msvc2022_64"
-          $out = Join-Path $pwd "release\windows-unpacked"
-          if (Test-Path $out) { Remove-Item -LiteralPath $out -Recurse -Force }
-          New-Item -ItemType Directory -Path $out | Out-Null
+          dotnet tool install --global wix --version 4.0.6
+          wix extension add -g WixToolset.UI.wixext/4.0.6
+          wix extension add -g WixToolset.Util.wixext/4.0.6
+          wix extension list -g
+          $wixBinDir = Join-Path $env:USERPROFILE ".dotnet\tools"
+          echo "WIX_BIN_DIR=$wixBinDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-          Copy-Item '.\build\client\Release\AmneziaVPN.exe' $out
-          Copy-Item '.\build\service\server\Release\AmneziaVPN-service.exe' $out
-          Copy-Item '.\client\images\app.ico' (Join-Path $out 'AmneziaVPN.ico')
+      - name: Build installer and unpacked bundle
+        shell: cmd
+        run: |
+          set BUILD_ARCH=${{ env.BUILD_ARCH }}
+          set QT_BIN_DIR="${{ runner.temp }}\Qt\${{ env.QT_VERSION }}\msvc2022_64\bin"
+          set QIF_BIN_DIR="${{ runner.temp }}\Qt\Tools\QtInstallerFramework\${{ env.QIF_VERSION }}\bin"
+          set WIX_BIN_DIR=%USERPROFILE%\.dotnet\tools
+          set SIGN_WINDOWS_BINARIES=0
+          call deploy\build_windows.bat
 
-          & (Join-Path $qtRoot 'bin\windeployqt.exe') --release --qmldir '.\client' --force --no-translations --force-openssl (Join-Path $out 'AmneziaVPN.exe')
-          & (Join-Path $qtRoot 'bin\windeployqt.exe') --release (Join-Path $out 'AmneziaVPN-service.exe')
-
-          Copy-Item '.\deploy\data\windows\x64\*' $out -Recurse -Force
-          Copy-Item '.\client\3rd-prebuilt\deploy-prebuilt\windows\x64\*' $out -Recurse -Force
-
-      - name: Pack zip
+      - name: Prepare release assets
         shell: powershell
         run: |
-          $zip = Join-Path $pwd 'release\AmneziaVPN_windows_unpacked.zip'
-          if (Test-Path $zip) { Remove-Item -LiteralPath $zip -Force }
-          Compress-Archive -Path '.\release\windows-unpacked\*' -DestinationPath $zip
+          $releaseRoot = Join-Path $pwd 'release'
+          if (Test-Path $releaseRoot) { Remove-Item -LiteralPath $releaseRoot -Recurse -Force }
+          New-Item -ItemType Directory -Path $releaseRoot | Out-Null
 
-      - name: Upload artifact
+          Copy-Item '.\AmneziaVPN_x64.exe' (Join-Path $releaseRoot 'AmneziaVPN_windows_installer_x64.exe')
+          Copy-Item '.\AmneziaVPN_x64.msi' (Join-Path $releaseRoot 'AmneziaVPN_windows_installer_x64.msi')
+
+          $zip = Join-Path $releaseRoot 'AmneziaVPN_windows_unpacked.zip'
+          Compress-Archive -Path '.\deploy\build_64\client\release\*' -DestinationPath $zip
+
+      - name: Upload installer exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer-exe
+          path: release/AmneziaVPN_windows_installer_x64.exe
+          compression-level: 0
+
+      - name: Upload installer msi artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer-msi
+          path: release/AmneziaVPN_windows_installer_x64.msi
+          compression-level: 0
+
+      - name: Upload unpacked zip artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-unpacked
@@ -195,5 +210,7 @@ jobs:
           prerelease: ${{ inputs.prerelease }}
           generate_release_notes: true
           files: |
+            release-assets/windows-installer-exe/AmneziaVPN_windows_installer_x64.exe
+            release-assets/windows-installer-msi/AmneziaVPN_windows_installer_x64.msi
             release-assets/windows-unpacked/AmneziaVPN_windows_unpacked.zip
             release-assets/android-arm64-debug/AmneziaVPN-arm64-v8a-debug.apk

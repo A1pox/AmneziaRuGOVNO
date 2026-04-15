@@ -8,6 +8,8 @@ This fork now includes a separate workflow:
 
 It creates a GitHub release manually from the Actions tab and uploads:
 
+- `AmneziaVPN_windows_installer_x64.exe`
+- `AmneziaVPN_windows_installer_x64.msi`
 - `AmneziaVPN_windows_unpacked.zip`
 - `AmneziaVPN-arm64-v8a-debug.apk`
 

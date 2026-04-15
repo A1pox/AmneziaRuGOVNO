@@ -1,4 +1,5 @@
 @ECHO OFF
+setlocal EnableExtensions
 
 CHCP 1252
 
@@ -6,9 +7,19 @@ REM %VAR:"=% mean dequoted %VAR%
 
 set PATH=%QT_BIN_DIR:"=%;%PATH%
 
+set SIGN_WINDOWS_BINARIES=%SIGN_WINDOWS_BINARIES:"=%
+if "%SIGN_WINDOWS_BINARIES%"=="" set SIGN_WINDOWS_BINARIES=1
+if /I "%SIGN_WINDOWS_BINARIES%"=="false" set SIGN_WINDOWS_BINARIES=0
+if /I "%SIGN_WINDOWS_BINARIES%"=="no" set SIGN_WINDOWS_BINARIES=0
+
+set WINDOWS_SIGNING_SUBJECT=%WINDOWS_SIGNING_SUBJECT:"=%
+if "%WINDOWS_SIGNING_SUBJECT%"=="" set WINDOWS_SIGNING_SUBJECT=Privacy Technologies OU
+
 echo "Using Qt in %QT_BIN_DIR%"
 echo "Using QIF in %QIF_BIN_DIR%"
 echo "Using WiX in %WIX_BIN_DIR%"
+echo "Windows signing enabled: %SIGN_WINDOWS_BINARIES%"
+echo "Windows signing subject: %WINDOWS_SIGNING_SUBJECT%"
 
 if "%WIX_BIN_DIR%"=="" (
     echo "WIX_BIN_DIR is not set"
@@ -22,6 +33,16 @@ set WIX_CLI=%WIX_BIN_DIR_UNQUOTED%\wix.exe
 if not exist "%WIX_CLI%" (
     echo "WiX CLI (wix.exe) was not found in %WIX_BIN_DIR%"
     exit /b 1
+)
+
+if not "%SIGN_WINDOWS_BINARIES%"=="0" (
+    where signtool >nul 2>&1
+    if errorlevel 1 (
+        echo "signtool.exe was not found but SIGN_WINDOWS_BINARIES=%SIGN_WINDOWS_BINARIES%"
+        exit /b 1
+    )
+) else (
+    echo "Skipping code signing because SIGN_WINDOWS_BINARIES=%SIGN_WINDOWS_BINARIES%"
 )
 
 REM Hold on to current directory
@@ -83,12 +104,14 @@ copy /Y "%PROJECT_DIR%\client\images\app.ico" "%OUT_APP_DIR%\AmneziaVPN.ico" >nu
 
 echo "Signing exe"
 cd %OUT_APP_DIR%
-signtool sign /v /n "Privacy Technologies OU" /fd sha256 /tr http://timestamp.comodoca.com/?td=sha256 /td sha256 *.exe
+call :sign_if_enabled "%OUT_APP_DIR%" *.exe
+if errorlevel 1 exit /b %errorlevel%
 
 "%QT_BIN_DIR:"=%\windeployqt" --release --qmldir "%PROJECT_DIR:"=%\client"  --force --no-translations --force-openssl "%OUT_APP_DIR:"=%\%APP_FILENAME:"=%"
 "%QT_BIN_DIR:"=%\windeployqt" --release "%OUT_APP_DIR:"=%\%SERVICE_FILENAME:"=%"
 
-signtool sign /v /n "Privacy Technologies OU" /fd sha256 /tr http://timestamp.comodoca.com/?td=sha256 /td sha256 *.dll
+call :sign_if_enabled "%OUT_APP_DIR%" *.dll
+if errorlevel 1 exit /b %errorlevel%
 
 echo "Copying deploy data..."
 xcopy %DEPLOY_DATA_DIR%    %OUT_APP_DIR%  /s /e /y /i /f
@@ -112,7 +135,8 @@ echo "Creating installer..."
 timeout 5
 
 cd %PROJECT_DIR%
-signtool sign /v /n "Privacy Technologies OU" /fd sha256 /tr http://timestamp.comodoca.com/?td=sha256 /td sha256 "%TARGET_FILENAME%"
+call :sign_if_enabled "%PROJECT_DIR%" "%TARGET_FILENAME%"
+if errorlevel 1 exit /b %errorlevel%
 
 echo "Preparing staging directory for MSI..."
 rmdir /Q /S "%STAGE_DIR%"
@@ -145,7 +169,21 @@ copy /Y "%GENERATED_MSI%" "%TARGET_MSI_FILENAME%"
 if %errorlevel% neq 0 exit /b %errorlevel%
 
 cd %PROJECT_DIR%
-signtool sign /v /n "Privacy Technologies OU" /fd sha256 /tr http://timestamp.comodoca.com/?td=sha256 /td sha256 "%TARGET_MSI_FILENAME%"
+call :sign_if_enabled "%PROJECT_DIR%" "%TARGET_MSI_FILENAME%"
+if errorlevel 1 exit /b %errorlevel%
 
 echo "Finished, see %TARGET_FILENAME% and %TARGET_MSI_FILENAME%"
-exit 0
+exit /b 0
+
+:sign_if_enabled
+if "%SIGN_WINDOWS_BINARIES%"=="0" (
+    echo "Skipping code signing for %~2"
+    exit /b 0
+)
+
+echo "Signing %~2"
+pushd "%~1"
+signtool sign /v /n "%WINDOWS_SIGNING_SUBJECT%" /fd sha256 /tr http://timestamp.comodoca.com/?td=sha256 /td sha256 %2
+set SIGN_ERROR=%errorlevel%
+popd
+exit /b %SIGN_ERROR%

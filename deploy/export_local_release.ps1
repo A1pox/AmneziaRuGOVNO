@@ -3,6 +3,8 @@ param(
     [string]$Version = (Get-Date -Format "yyyyMMdd-HHmmss"),
     [string]$OutputRoot = (Join-Path $PSScriptRoot "..\\local-releases"),
     [string]$WindowsBundle = "C:\\src\\Amnezia-unpacked",
+    [string]$WindowsInstallerExe = "",
+    [string]$WindowsInstallerMsi = "",
     [string]$WindowsExe = "C:\\src\\Amnezia-build\\client\\Release\\AmneziaVPN.exe",
     [string]$WindowsServiceExe = "C:\\src\\Amnezia-build\\service\\server\\Release\\AmneziaVPN-service.exe",
     [string]$AndroidApk = "C:\\src\\Amnezia-android-build\\client\\android-build\\build\\outputs\\apk\\debug\\AmneziaVPN-arm64-v8a-debug.apk"
@@ -45,6 +47,14 @@ function Copy-IfExists {
     return $Destination
 }
 
+$repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
+if (-not $WindowsInstallerExe) {
+    $WindowsInstallerExe = Join-Path $repoRoot "AmneziaVPN_x64.exe"
+}
+if (-not $WindowsInstallerMsi) {
+    $WindowsInstallerMsi = Join-Path $repoRoot "AmneziaVPN_x64.msi"
+}
+
 $outputRootPath = Ensure-Directory -Path $OutputRoot
 $releaseRoot = Ensure-Directory -Path (Join-Path $outputRootPath $Version)
 $windowsRoot = Ensure-Directory -Path (Join-Path $releaseRoot "windows")
@@ -55,6 +65,16 @@ $copied = @()
 $windowsBundleCopy = Copy-IfExists -Source $WindowsBundle -Destination (Join-Path $windowsRoot "unpacked") -Directory
 if ($windowsBundleCopy) {
     $copied += "windows_bundle=$windowsBundleCopy"
+}
+
+$windowsInstallerExeCopy = Copy-IfExists -Source $WindowsInstallerExe -Destination (Join-Path $windowsRoot "AmneziaVPN_windows_installer_x64.exe")
+if ($windowsInstallerExeCopy) {
+    $copied += "windows_installer_exe=$windowsInstallerExeCopy"
+}
+
+$windowsInstallerMsiCopy = Copy-IfExists -Source $WindowsInstallerMsi -Destination (Join-Path $windowsRoot "AmneziaVPN_windows_installer_x64.msi")
+if ($windowsInstallerMsiCopy) {
+    $copied += "windows_installer_msi=$windowsInstallerMsiCopy"
 }
 
 $windowsExeCopy = Copy-IfExists -Source $WindowsExe -Destination (Join-Path $windowsRoot "AmneziaVPN.exe")
@@ -76,7 +96,7 @@ $manifestPath = Join-Path $releaseRoot "manifest.txt"
 $manifest = @(
     "version=$Version"
     "created_utc=$((Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'))"
-    "source_repo=$((Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path)"
+    "source_repo=$repoRoot"
 )
 
 if ($copied.Count -gt 0) {
